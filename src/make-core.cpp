@@ -9,7 +9,11 @@
 __attribute__((noinline))
 char CRASH(char *arg)
 {
-    return *arg;
+    if (arg) {
+        return *arg;
+    } else {
+        return 1 + printf("null\n");
+    }
 }
 
 int main(int argc, char **argv)
