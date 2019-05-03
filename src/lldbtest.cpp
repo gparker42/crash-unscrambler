@@ -39,8 +39,210 @@ void unimplemented(const char* str, ...) {
 }
 
 
+struct Value {
+    uint64_t bits;
+    uint64_t validBits;
+
+    Value(lldb::SBFrame& frame, const char *reg) {
+        // fixme can this fail?
+        bits = frame.FindRegister(reg).GetValueAsUnsigned();
+        validBits = ~0;
+    }
+
+    Value() {
+        bits = 0;
+        validBits = 0;
+    }
+
+    bool allValid() {
+        return validBits == ~(uint64_t)0;
+    }
+
+    bool noneValid() {
+        return validBits == 0;
+    }
+
+    void print() {
+        if (allValid()) {
+            printf("0x%llx", (unsigned long long)bits);
+        } else if (noneValid()) {
+            printf("<unknown>");
+        } else {
+            printf("(0x%llx & 0x%llx)", (unsigned long long)(bits & validBits),
+                   (unsigned long long)validBits);
+        }
+    }
+
+    bool operator == (const Value& rhs) const {
+        return bits == rhs.bits  &&  validBits == rhs.validBits;
+    }
+
+    bool operator != (const Value& rhs) const {
+        return !(*this == rhs);
+    }
+
+    static Value unknown() {
+        return Value();
+    }
+};
+
+enum X86RegisterNumber {
+    RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, R8, R9, R10, R11, R12, R13, R14, R15, RFLAGS
+};
+
+// returns register and valid bits mask (for sub-registers)
+// example: X86_REG_AH returns [RAX, 0xff00]
+// https://en.wikipedia.org/wiki/X86#/media/File:Table_of_x86_Registers_svg.svg
+std::tuple<X86RegisterNumber, uint64_t> X86RegisterFromCapstone(x86_reg reg) {
+    switch (reg) {
+    // 64-bit GPRs
+    case X86_REG_RAX:    return { RAX, 0xffffffffffffffff };
+    case X86_REG_RBX:    return { RBX, 0xffffffffffffffff };
+    case X86_REG_RCX:    return { RCX, 0xffffffffffffffff };
+    case X86_REG_RDX:    return { RDX, 0xffffffffffffffff };
+    case X86_REG_RSI:    return { RSI, 0xffffffffffffffff };
+    case X86_REG_RDI:    return { RDI, 0xffffffffffffffff };
+    case X86_REG_RBP:    return { RBP, 0xffffffffffffffff };
+    case X86_REG_RSP:    return { RSP, 0xffffffffffffffff };
+    case X86_REG_R8:     return { R8,  0xffffffffffffffff };
+    case X86_REG_R9:     return { R9,  0xffffffffffffffff };
+    case X86_REG_R10:    return { R10, 0xffffffffffffffff };
+    case X86_REG_R11:    return { R11, 0xffffffffffffffff };
+    case X86_REG_R12:    return { R12, 0xffffffffffffffff };
+    case X86_REG_R13:    return { R13, 0xffffffffffffffff };
+    case X86_REG_R14:    return { R14, 0xffffffffffffffff };
+    case X86_REG_R15:    return { R15, 0xffffffffffffffff };
+    // fixme RFLAGS?
+
+    // 32-bit GPRs
+    case X86_REG_EAX:    return { RAX, 0xffffffff };
+    case X86_REG_EBX:    return { RBX, 0xffffffff };
+    case X86_REG_ECX:    return { RCX, 0xffffffff };
+    case X86_REG_EDX:    return { RDX, 0xffffffff };
+    case X86_REG_ESI:    return { RSI, 0xffffffff };
+    case X86_REG_EDI:    return { RDI, 0xffffffff };
+    case X86_REG_EBP:    return { RBP, 0xffffffff };
+    case X86_REG_ESP:    return { RSP, 0xffffffff };
+    case X86_REG_R8D:    return { R8,  0xffffffff };
+    case X86_REG_R9D:    return { R9,  0xffffffff };
+    case X86_REG_R10D:   return { R10, 0xffffffff };
+    case X86_REG_R11D:   return { R11, 0xffffffff };
+    case X86_REG_R12D:   return { R12, 0xffffffff };
+    case X86_REG_R13D:   return { R13, 0xffffffff };
+    case X86_REG_R14D:   return { R14, 0xffffffff };
+    case X86_REG_R15D:   return { R15, 0xffffffff };
+    case X86_REG_EFLAGS: return { RFLAGS, 0xffffffff };
+
+    // 16-bit GPRs
+    case X86_REG_AX:     return { RAX, 0xffff };
+    case X86_REG_BX:     return { RBX, 0xffff };
+    case X86_REG_CX:     return { RCX, 0xffff };
+    case X86_REG_DX:     return { RDX, 0xffff };
+    case X86_REG_SI:     return { RSI, 0xffff };
+    case X86_REG_DI:     return { RDI, 0xffff };
+    case X86_REG_BP:     return { RBP, 0xffff };
+    case X86_REG_SP:     return { RSP, 0xffff };
+    case X86_REG_R8W:    return { R8,  0xffff };
+    case X86_REG_R9W:    return { R9,  0xffff };
+    case X86_REG_R10W:   return { R10, 0xffff };
+    case X86_REG_R11W:   return { R11, 0xffff };
+    case X86_REG_R12W:   return { R12, 0xffff };
+    case X86_REG_R13W:   return { R13, 0xffff };
+    case X86_REG_R14W:   return { R14, 0xffff };
+    case X86_REG_R15W:   return { R15, 0xffff };
+
+    // LSB 8-bit GPRs
+    case X86_REG_AL:     return { RAX, 0xff };
+    case X86_REG_BL:     return { RBX, 0xff };
+    case X86_REG_CL:     return { RCX, 0xff };
+    case X86_REG_DL:     return { RDX, 0xff };
+    case X86_REG_SIL:    return { RSI, 0xff };
+    case X86_REG_DIL:    return { RDI, 0xff };
+    case X86_REG_BPL:    return { RBP, 0xff };
+    case X86_REG_SPL:    return { RSP, 0xff };
+    case X86_REG_R8B:    return { R8,  0xff };
+    case X86_REG_R9B:    return { R9,  0xff };
+    case X86_REG_R10B:   return { R10, 0xff };
+    case X86_REG_R11B:   return { R11, 0xff };
+    case X86_REG_R12B:   return { R12, 0xff };
+    case X86_REG_R13B:   return { R13, 0xff };
+    case X86_REG_R14B:   return { R14, 0xff };
+    case X86_REG_R15B:   return { R15, 0xff };
+
+    // MSB 8-bit GPRs
+    case X86_REG_AH:     return { RAX, 0xff00 };
+    case X86_REG_BH:     return { RBX, 0xff00 };
+    case X86_REG_CH:     return { RCX, 0xff00 };
+    case X86_REG_DH:     return { RDX, 0xff00 };
+
+    default:
+        die("unhandled x86 register %d", reg);
+    }
+}
+
+struct RegisterState {
+    Value registers[17];
+
+    RegisterState(lldb::SBFrame& frame) {
+#define READ(r) registers[r] = Value(frame, #r)
+        READ(RAX); READ(RBX); READ(RCX); READ(RDX);
+        READ(RSI); READ(RDI); READ(RBP); READ(RSP);
+        READ(R8);  READ(R9);  READ(R10); READ(R11);
+        READ(R12); READ(R13); READ(R14); READ(R15);
+        READ(RFLAGS);
+#undef READ
+    }
+
+    void print() {
+#define PRINT(r) do { printf(#r ": %s", (r == R8 || r == R9) ? " " : "");  \
+                      registers[r].print();               \
+                      printf("\n"); } while (0)
+
+        PRINT(RAX); PRINT(RBX); PRINT(RCX); PRINT(RDX);
+        PRINT(RSI); PRINT(RDI); PRINT(RBP); PRINT(RSP);
+        PRINT(R8);  PRINT(R9);  PRINT(R10); PRINT(R11);
+        PRINT(R12); PRINT(R13); PRINT(R14); PRINT(R15);
+        PRINT(RFLAGS);
+    }
+
+    void printDeltaFrom(RegisterState& pred) {
+#define MAYBE(r) do {                                                   \
+                     if (registers[r] != pred.registers[r]) {           \
+                         PRINT(r);                                      \
+                     }                                                  \
+                 } while (0)
+        MAYBE(RAX); MAYBE(RBX); MAYBE(RCX); MAYBE(RDX);
+        MAYBE(RSI); MAYBE(RDI); MAYBE(RBP); MAYBE(RSP);
+        MAYBE(R8);  MAYBE(R9);  MAYBE(R10); MAYBE(R11);
+        MAYBE(R12); MAYBE(R13); MAYBE(R14); MAYBE(R15);
+        MAYBE(RFLAGS);
+
+#undef MAYBE
+#undef PRINT
+    }
+};
+
+struct BasicBlock;
+
+struct Instruction {
+    cs_insn* code;
+    BasicBlock& owner;
+
+    RegisterState rewindFromState(RegisterState& state);
+
+    RegisterState rewind_x86_mov_regToReg(RegisterState& state);
+
+    const char * c_str() {
+        static char *result;
+        free(result);
+        asprintf(&result, "0x%llx: %s\t%s",
+                 code->address, code->mnemonic, code->op_str);
+        return result;
+    }
+};
+
 struct BasicBlock {
-    std::vector<cs_insn*> insns;
+    std::vector<Instruction> insns;
     std::vector<BasicBlock*> preds;
     std::vector<BasicBlock*> succs;
     uint64_t visited;
@@ -50,32 +252,120 @@ struct BasicBlock {
     bool isCallPlaceholder = false;
 
     BasicBlock(int i) : index(i) { }
+
+    void print() {
+        printf("BLOCK #%d\n", index);
+
+        if (preds.size()) {
+            printf("  <==");
+            for (auto* pred : preds) {
+                printf(" #%d", pred->index);
+            }
+            printf("\n");
+        }
+
+        if (isEntry) printf("  (ENTRY)\n");
+        if (isExit) printf("  (EXIT)\n");
+        if (isCallPlaceholder) printf("  (CALL)\n");
+
+        for (auto& insn : insns) {
+            printf("  %s\n", insn.c_str());
+        }
+
+        if (succs.size()) {
+            printf("  ==>");
+            for (auto* succ : succs) {
+                printf(" #%d", succ->index);
+            }
+            printf("\n");
+        }
+
+        printf("\n");
+    }
 };
 
 
-bool isBranch(csh disassembler, cs_insn& insn) {
+struct TraceStep {
+    RegisterState inputs;
+    Instruction& insn;
+};
+
+struct Trace {
+    // steps[0] is newest; step++ is backward in time
+    std::vector<TraceStep> steps;
+    RegisterState outputs;
+
+    Trace(RegisterState outputState)
+        : outputs(outputState) { }
+
+    std::vector<TraceStep>::iterator newestStep() {
+        return steps.begin();
+    }
+    std::vector<TraceStep>::iterator oldestStep() {
+        return steps.end() - 1;
+    }
+
+    RegisterState& oldestRegisterState() {
+        if (steps.size() > 0) return oldestStep()->inputs;
+        else return outputs;
+    }
+
+    void prependBasicBlock(BasicBlock* bb);
+    void prependInstruction(Instruction& insn);
+    void prependBasicBlockBeforeInstruction(BasicBlock* bb, int index);
+
+    void print() {
+        printf("TRACE\n");
+        printf("  (ENTRY)\n\n");
+        auto prev = steps.rend();
+        for (auto step = steps.rbegin(); step != steps.rend(); step++) {
+            if (prev != steps.rend()) {
+                step->inputs.printDeltaFrom(prev->inputs);
+            } else {
+                step->inputs.print();
+            }
+            prev = step;
+            printf("\n  %s\n\n", step->insn.c_str());
+        }
+        if (prev != steps.rend()) {
+            outputs.printDeltaFrom(prev->inputs);
+        }
+        printf("\n  (EXIT)\n\n");
+        outputs.print();
+
+    }
+};
+
+
+bool isBranch(csh disassembler, cs_insn* insn) {
     // fixme syscall? int? ret?
     return
-        cs_insn_group(disassembler, &insn, CS_GRP_JUMP) ||
-        cs_insn_group(disassembler, &insn, CS_GRP_CALL) ||
-        cs_insn_group(disassembler, &insn, CS_GRP_RET)  ||
-        cs_insn_group(disassembler, &insn, CS_GRP_INT)  ||
-        cs_insn_group(disassembler, &insn, CS_GRP_IRET) ||
-        cs_insn_group(disassembler, &insn, CS_GRP_CALL);
+        cs_insn_group(disassembler, insn, CS_GRP_JUMP) ||
+        cs_insn_group(disassembler, insn, CS_GRP_CALL) ||
+        cs_insn_group(disassembler, insn, CS_GRP_RET)  ||
+        cs_insn_group(disassembler, insn, CS_GRP_INT)  ||
+        cs_insn_group(disassembler, insn, CS_GRP_IRET) ||
+        cs_insn_group(disassembler, insn, CS_GRP_CALL);
+}
+bool isBranch(csh disassembler, Instruction& insn) {
+    return isBranch(disassembler, insn.code);
 }
 
-bool isCall(csh disassembler, cs_insn& insn) {
+bool isCall(csh disassembler, Instruction& insn) {
     // fixme syscall?
-    return cs_insn_group(disassembler, &insn, CS_GRP_CALL);
+    return cs_insn_group(disassembler, insn.code, CS_GRP_CALL);
 }
 
-bool branchIsRelative(csh disassembler, cs_insn& insn) {
+bool branchIsRelative(csh disassembler, cs_insn* insn) {
     assert(isBranch(disassembler, insn));
-    return cs_insn_group(disassembler, &insn, CS_GRP_BRANCH_RELATIVE);
+    return cs_insn_group(disassembler, insn, CS_GRP_BRANCH_RELATIVE);
+}
+bool branchIsRelative(csh disassembler, Instruction& insn) {
+    return branchIsRelative(disassembler, insn.code);
 }
 
-bool isUnconditionalBranch(csh disassembler, cs_insn& insn) {
-    switch (insn.id) {
+bool isUnconditionalBranch(csh disassembler, Instruction& insn) {
+    switch (insn.code->id) {
     case X86_INS_JMP:
     case X86_INS_CALL:
     case X86_INS_RET:
@@ -93,12 +383,79 @@ bool isUnconditionalBranch(csh disassembler, cs_insn& insn) {
     }
 }
 
-uint64_t branchTargetAddress(csh disassembler, cs_insn& insn)
-{
+uint64_t branchTargetAddress(csh disassembler, cs_insn* insn) {
     if (branchIsRelative(disassembler, insn)) {
-        return X86_REL_ADDR(insn);
+        return X86_REL_ADDR(*insn);
     } else {
         return ~0;
+    }
+}
+uint64_t branchTargetAddress(csh disassembler, Instruction& insn) {
+    return branchTargetAddress(disassembler, insn.code);
+}
+
+
+Value rewind_mov_r64_to_r64(Value output) {
+    return output;
+}
+
+
+RegisterState Instruction::rewind_x86_mov_regToReg(RegisterState& output) {
+    auto& x86 = code->detail->x86;
+    assert(x86.operands[0].type == X86_OP_REG);
+    assert(x86.operands[1].type == X86_OP_REG);
+
+    auto [dstReg, dstRegMask] = X86RegisterFromCapstone(x86.operands[0].reg);
+    auto [srcReg, srcRegMask] = X86RegisterFromCapstone(x86.operands[1].reg);
+    if (dstRegMask != ~(uint64_t)0  ||  srcRegMask != ~(uint64_t)0) {
+        unimplemented("x86 mov with partial register update %s", this->c_str());
+    }
+
+    // input srcReg was dstReg output
+    // dstReg input was unknown
+    // fixme forward propagation (see comment in make-core.cpp)
+    RegisterState input = output;
+    input.registers[srcReg] = rewind_mov_r64_to_r64(output.registers[dstReg]);
+    input.registers[dstReg] = Value::unknown();
+    return input;
+}
+
+
+RegisterState Instruction::rewindFromState(RegisterState& outputState) {
+    auto& x86 = code->detail->x86;
+
+    switch (code->id) {
+    case X86_INS_MOV:
+        if (x86.op_count != 2) {
+            die("x86 mov with operand count not equal to 2 %s", this->c_str());
+        }
+        if (x86.operands[0].type == X86_OP_REG  ||
+            x86.operands[1].type == X86_OP_REG)
+        {
+            return rewind_x86_mov_regToReg(outputState);
+        }
+
+    default:
+        die("can't rewind instruction %s", this->c_str());
+    }
+}
+
+void Trace::prependInstruction(Instruction& insn) {
+    RegisterState inputs = insn.rewindFromState(oldestRegisterState());
+    steps.push_back(TraceStep{ inputs, insn });
+}
+
+void Trace::prependBasicBlock(BasicBlock* bb) {
+    for (auto insn = bb->insns.rbegin(); insn != bb->insns.rend(); insn++) {
+        prependInstruction(*insn);
+    }
+}
+
+void Trace::prependBasicBlockBeforeInstruction(BasicBlock* bb, int index)
+{
+    // instruction #index is NOT executed
+    while (index-- > 0) {
+        prependInstruction(bb->insns[index]);
     }
 }
 
@@ -112,8 +469,8 @@ struct CFG {
     // fixme slow
     BasicBlock* blockForAddress(uint64_t address) {
         for (auto& block : blocks) {
-            for (auto* insn : block.insns) {
-                if (insn->address == address) return &block;
+            for (auto& insn : block.insns) {
+                if (insn.code->address == address) return &block;
             }
         }
         return nullptr;
@@ -138,8 +495,8 @@ struct CFG {
         vector<uint64_t> blockStarts;
         blockStarts.push_back(insns[0].address);  // #1
         for (auto i = 0; i < insnCount; i++) {
-            if (isBranch(disassembler, insns[i])) {
-                blockStarts.push_back(branchTargetAddress(disassembler, insns[i]));  // #2
+            if (isBranch(disassembler, &insns[i])) {
+                blockStarts.push_back(branchTargetAddress(disassembler, &insns[i]));  // #2
                 if (i+1 < insnCount) {
                     blockStarts.push_back(insns[i+1].address); // #3
                 }
@@ -168,7 +525,7 @@ struct CFG {
             }
 
             // Add the instruction to the block.
-            currentBlock->insns.push_back(&insns[i]);
+            currentBlock->insns.push_back(Instruction{&insns[i], *currentBlock});
         }
 
         // Revisit the last instruction of each block to
@@ -184,18 +541,18 @@ struct CFG {
 
         for (auto& block : blocks) {
             if (block.insns.size() == 0) continue;
-            auto* insn = block.insns.back();
+            auto& insn = block.insns.back();
 
             // The block immediately after this one,
             // if we don't branch away forever.
             auto* fallthroughSuccessor =
-                (insn+1 < insns+insnCount)
-                ? blockForAddress((insn+1)->address)
+                (insn.code+1 < insns+insnCount)
+                ? blockForAddress((insn.code+1)->address)
                 : &exit();
 
-            if (isCall(disassembler, *insn)) {
+            if (isCall(disassembler, insn)) {
                 // Insert call placeholder block.
-                if (blockForAddress(branchTargetAddress(disassembler, *insn))) {
+                if (blockForAddress(branchTargetAddress(disassembler, insn))) {
                     unimplemented("can't CFG a call instruction "
                                   "that has a local target");
                 }
@@ -208,14 +565,14 @@ struct CFG {
                 // Or do that in a later operation.
                 addEdge(*calledBlock, *fallthroughSuccessor);
             }
-            else if (isBranch(disassembler, *insn)) {
+            else if (isBranch(disassembler, insn)) {
                 // Add edge to branch's target, or exit() if it's non-local.
-                auto targetAddress = branchTargetAddress(disassembler, *insn);
+                auto targetAddress = branchTargetAddress(disassembler, insn);
                 auto* target = blockForAddress(targetAddress) ?: &exit();
                 addEdge(block, *target);
             }
 
-            if (!isUnconditionalBranch(disassembler, *insn)) {
+            if (!isUnconditionalBranch(disassembler, insn)) {
                 // Last instruction may fall through.
                 addEdge(block, *fallthroughSuccessor);
             }
@@ -230,36 +587,8 @@ struct CFG {
 
     void print(void) {
         printf("\nCFG\n\n");
-        auto i = 0;
         for (auto& block : blocks) {
-            printf("BLOCK #%d\n", i++);
-
-            if (block.preds.size()) {
-                printf("  <==");
-                for (auto* pred : block.preds) {
-                    printf(" #%d", pred->index);
-                }
-                printf("\n");
-            }
-
-            if (block.isEntry) printf("  (ENTRY)\n");
-            if (block.isExit) printf("  (EXIT)\n");
-            if (block.isCallPlaceholder) printf("  (CALL)\n");
-
-            for (auto* insn : block.insns) {
-                printf("  0x%llx: %s\t%s\n",
-                       insn->address, insn->mnemonic, insn->op_str);
-            }
-
-            if (block.succs.size()) {
-                printf("  ==>");
-                for (auto* succ : block.succs) {
-                    printf(" #%d", succ->index);
-                }
-                printf("\n");
-            }
-
-            printf("\n");
+            block.print();
         }
     }
 
@@ -309,9 +638,10 @@ struct CFG {
 
             if (block.insns.size() > 0) {
                 fprintf(gfile, "\\\n");
-                for (auto* insn : block.insns) {
+                for (auto& insn : block.insns) {
                     fprintf(gfile, " 0x%llx:\\tab %s\\tab %s \\\n",
-                            insn->address, insn->mnemonic, insn->op_str);
+                            insn.code->address, insn.code->mnemonic,
+                            insn.code->op_str);
                 }
             }
             fprintf(gfile, bbmiddle "%d" bbend, block.index);
@@ -336,6 +666,9 @@ private:
         succ.preds.push_back(&pred);
     }
 };
+
+
+
 
 
 int main(int argc, char** argv)
@@ -374,6 +707,7 @@ int main(int argc, char** argv)
     // The frame's SBFunction is outside any inlining.
     // This is the instruction range for which we want to build a CFG.
     // Inlined functions are represented using SBBlock.
+    // fixme this only works with debuginfo?
     auto function = frame.GetFunction();
     dump.Printf("ANALYZING FUNCTION:\n");
     function.GetDescription(dump);
@@ -395,7 +729,12 @@ int main(int argc, char** argv)
     if (cs_open(CS_ARCH_X86, CS_MODE_64, &disassembler) != CS_ERR_OK) {
         die("couldn't open disassembler");
     }
-    cs_option(disassembler, CS_OPT_SYNTAX, CS_OPT_SYNTAX_ATT);
+
+    // Don't use capstone's AT&T syntax, even though macOS does.
+    // captone's option changes its internal operand numbering,
+    // not just its textual output.
+    // We prefer to use consistent operand numbering everywhere.
+    // cs_option(disassembler, CS_OPT_SYNTAX, CS_OPT_SYNTAX_ATT);
     cs_option(disassembler, CS_OPT_DETAIL, CS_OPT_ON);
     cs_insn* insns;
     auto insnCount = cs_disasm(disassembler, insnbytes, byteSize, start, 0, &insns);
@@ -408,4 +747,19 @@ int main(int argc, char** argv)
     auto cfg = CFG(disassembler, insns, insnCount, function.GetDisplayName());
     cfg.print();
     cfg.grafflize();
+
+    BasicBlock* crashedBB = cfg.blockForAddress(frame.GetPC());
+    int crashedInstructionIndex = 0;
+    for (auto insn = crashedBB->insns.begin(); insn != crashedBB->insns.end(); insn++, crashedInstructionIndex++) {
+        if (insn->code->address == frame.GetPC()) {
+            break;
+        }
+    }
+
+    auto regs = RegisterState(frame);
+
+    Trace tt(regs);
+    tt.prependBasicBlockBeforeInstruction(crashedBB, crashedInstructionIndex);
+
+    tt.print();
 }
